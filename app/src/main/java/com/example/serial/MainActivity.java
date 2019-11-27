@@ -53,6 +53,7 @@ public class MainActivity extends Activity {
     String message = "";
     private boolean shouldRun = true;
 
+    private String command = "0";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -136,6 +137,20 @@ public class MainActivity extends Activity {
                                 display.setText(message);
                             }
                         }
+                        Process p = Runtime.getRuntime().exec("su");
+                        DataOutputStream dos = new DataOutputStream(p.getOutputStream());
+                        dos.writeBytes("cd /sys/class/leds/led1\n");
+
+                        if (command.equals("0")) {
+                            command = "1";
+                            dos.writeBytes("echo 1 > brightness\n");
+                        }
+                        else {
+                            command = "0";
+                            dos.writeBytes("echo 0 > brightness\n");}
+                        dos.flush();
+                        dos.close();
+                        p.waitFor();
                         Thread.sleep(50);
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -153,6 +168,10 @@ public class MainActivity extends Activity {
         this.shouldRun = false;
         try{
             readSerialDataThread.join();
+            Process p = Runtime.getRuntime().exec("su");
+            DataOutputStream dos = new DataOutputStream(p.getOutputStream());
+            dos.writeBytes("cd /sys/class/leds/led1\n");
+            dos.writeBytes("echo 0 > brightness\n");
         }
         catch (Exception e){e.printStackTrace();}
         mSerialPort.close();
