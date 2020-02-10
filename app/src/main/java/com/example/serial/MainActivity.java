@@ -3,6 +3,7 @@ package com.example.serial;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -14,6 +15,9 @@ import android.hardware.usb.UsbEndpoint;
 import android.hardware.usb.UsbManager;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Message;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -26,6 +30,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.LineNumberReader;
 import java.io.OutputStream;
@@ -53,7 +58,41 @@ public class MainActivity extends Activity {
     String message = "";
     private boolean shouldRun = true;
 
+    final int MESSAGE_READ = 0;
+
     private String command = "0";
+    private Handler handler;
+   int i = 0;
+
+    @SuppressLint("HandlerLeak")
+    Handler mHandler=new Handler()
+    {
+        @Override
+        public void handleMessage(Message msg_type) {
+            super.handleMessage(msg_type);
+
+            switch (msg_type.what) {
+                case MESSAGE_READ:
+
+                    byte[] readbuf = (byte[]) msg_type.obj;
+                    String string_recieved=new String(readbuf);
+
+                    try {
+                        Log.w("", string_recieved);
+                        if (!string_recieved.trim().equals("")) {
+                        display.setText(string_recieved);
+                        Log.w ("received ", string_recieved);
+                        }
+
+                    } catch (Exception e) {
+                        Log.e("error", "Could't read incoming message");
+                        e.printStackTrace();
+                    }
+                    //String string_recieved=new String(readbuf);
+                    break;
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +103,7 @@ public class MainActivity extends Activity {
         sendButton = findViewById(R.id.button);
 
         context = getApplicationContext();
+        handler = new Handler();
 
         // Find all available drivers from attached devices.
 
@@ -83,7 +123,11 @@ public class MainActivity extends Activity {
 
         } catch (Exception e) {Log.e("","Connection Failed"); e.printStackTrace();}
 
-        startThread();
+        //startThread();
+        ConnectedThread connectedThread = new ConnectedThread();
+        connectedThread.start();
+        SendThread();
+       //s.start();
 
 
         sendButton.setOnClickListener(new View.OnClickListener() {
@@ -94,7 +138,7 @@ public class MainActivity extends Activity {
                     try {
                         byte[] outBuf = data.getBytes();
                         mOutputStream.write(outBuf);
-
+                        mOutputStream.flush();
                         Toast toast = Toast.makeText(context, "Sent to Arduino", Toast.LENGTH_SHORT);
                         toast.show();
 
@@ -105,16 +149,16 @@ public class MainActivity extends Activity {
         });
 
         //TODO: Better to implement displaying text to UI this way
-        /*runOnUiThread(new Runnable() {
+       /*runOnUiThread(new Runnable() {
 
-            @Override
-            public void run() {
-                if (!message.equals("")) {
-                    display.setText(message);
-                }
-            }
+           @Override
+           public void run() {
+               if (!message.equals("")) {
+                   display.setText(message);
+               }
+           }
 
-        });*/
+       });*/
 
     }
 
@@ -137,6 +181,7 @@ public class MainActivity extends Activity {
                                 display.setText(message);
                             }
                         }
+                        //LED1 of the board will blink if app deploys successfully
                         Process p = Runtime.getRuntime().exec("su");
                         DataOutputStream dos = new DataOutputStream(p.getOutputStream());
                         dos.writeBytes("cd /sys/class/leds/led1\n");
@@ -161,6 +206,53 @@ public class MainActivity extends Activity {
         readSerialDataThread.start();
     }
 
+    private class ConnectedThread extends Thread{
+        public void run(){
+            byte[] message;
+            int len;
+            while (true){
+                try{
+                    message = new byte[128];
+                    if(inStream.available() > 0){
+                        // byte[] inputData = new byte[10];
+                        //int readCount = readInputStreamWithTimeout(inStream, inputData, 100);
+
+                        len = inStream.read(message);
+                        Log.e("debug", "---------- " + new String(message));
+                        mHandler.obtainMessage(MESSAGE_READ, len, -1, message).sendToTarget();
+
+                    }
+                   // else {
+                     //   SystemClock.sleep(100);
+                   // }
+                }
+                catch (Exception e){
+                    Log.e("debug", "?????????????????????");
+                    break;
+                }
+            }
+        }
+    }
+
+    private void SendThread()
+
+    {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                    try {
+                        byte[] outBuf = (" ").getBytes();
+                        mOutputStream.write(outBuf);
+                        mOutputStream.flush();
+                        i++;
+
+                        Log.i("", "Sending... " + i);
+                    } catch (Exception e) {
+                }
+                handler.postDelayed(this, 100);
+            }
+        }, 100);
+    }
 
     @Override
     public void onDestroy() {
@@ -177,5 +269,18 @@ public class MainActivity extends Activity {
         mSerialPort.close();
     }
 
-}
+    public static int readInputStreamWithTimeout(InputStream is, byte[] b, int timeoutMillis)
+            throws IOException {
+        int bufferOffset = 0;
+        long maxTimeMillis = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < maxTimeMillis && bufferOffset < b.length) {
+            int readLength = java.lang.Math.min(is.available(),b.length-bufferOffset);
+            // can alternatively use bufferedReader, guarded by isReady():
+            int readResult = is.read(b, bufferOffset, readLength);
+            if (readResult == -1) break;
+            bufferOffset += readResult;
+        }
+        return bufferOffset;
+    }
 
+}
